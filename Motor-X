@@ -1,0 +1,231 @@
+/*---------------------------------------------------------------------------------
+Dies ist eines von 4 Programmen f�r die Technikerarbeit "Cameraslider" von 
+Dennis Bodenmüller
+
+Dieses Programm ist f�r den Arduino, welcher die X-Achse des Slider steuert, gedacht
+
+Folgende Hardware hängt mit diesem Programm zusammen:
+Board:         Arduino Nano 1
+Schrittmotor:     Nema 23 (X-Achse)
+Schrittmotortreiber:  Polulu A4988
+Endlagenschalter: Microschalter             
+Schalter für:   Steuerung EIN/AUS
+      Automatik EIN/AUS
+      Automatik Start
+      Automatik Stop
+      Joystick              			//noch nicht integriert
+      Richtung LINKS/RECHTS
+      Poti Geschwindigkeit X-Achse
+      Meldeleuchte Endlage erreicht         
+----------------------------------------------------------------------------------*/
+
+// Benennen der Pins und Zuweisung auf der Platine
+  #define FREIGABE_PIN                    	2     //input
+  #define AUTOMATIK_PIN                   	3     //input
+  #define ENDSCHALTER_PIN                 	4     //input
+  #define RICHTUNG_PIN                 		  5     //input
+  #define AUTOMATIK_START_FAHRT       	  	6     //input
+  #define AUTOMATIK_STOP_FAHRT    	      	7     //input
+  #define STEP_PIN                        	8     //output
+  #define DIR_PIN                         	9     //output
+  #define ENABLE_PIN                      	10    //output
+  #define FREIFAHREN_PIN                  	11    //input
+  #define ENDSCHALTER_MELDE_PIN           	13    //output
+  #define AUTOMATIK_GESCHWINDIGKEIT_PIN	  	A0    //analog input
+  #define HAND_GESCHWINDIGKEIT_PIN        	A1    //analog input
+
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+//Das setup dient dazu, das Programm in einen Initialzustand zu bringen
+void setup() {
+
+//Definieren der Funktion der verschiedenen Pins
+    pinMode(FREIGABE_PIN,                       INPUT_PULLUP);
+    pinMode(AUTOMATIK_PIN,                      INPUT_PULLUP);
+    pinMode(ENDSCHALTER_PIN,                    INPUT_PULLUP);
+    pinMode(RICHTUNG_PIN,                       INPUT_PULLUP);
+    pinMode(AUTOMATIK_START_FAHRT,              INPUT_PULLUP);
+    pinMode(AUTOMATIK_STOP_FAHRT,               INPUT_PULLUP);
+    pinMode(FREIFAHREN_PIN,                     INPUT_PULLUP);
+    pinMode(STEP_PIN,                           OUTPUT);              
+    pinMode(DIR_PIN,                            OUTPUT);              
+    pinMode(ENABLE_PIN,                         OUTPUT);
+    pinMode(ENDSCHALTER_MELDE_PIN,              OUTPUT);  
+    pinMode(AUTOMATIK_GESCHWINDIGKEIT_PIN,      INPUT); 
+    pinMode(HAND_GESCHWINDIGKEIT_PIN,           INPUT);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+//Ab hier beginnt die Programmschleife. Sie wird kontinuierlich wiederholt.
+void loop() {
+
+  //Zu Beginn werden alle Benötigten Variablen deklariert. Die Liste wird im Programmverlauf erweitert.
+  //Eine Deklaration im loop() entspricht einer lokalen Variable. Hierbei gibt es verschiedene Datentypen.
+  bool freigabe;              
+  bool automatik;
+  bool endlage;
+  bool richtung;
+  bool aut_start;
+  bool stop_fahrt;
+  bool freifahren;
+  bool merker_1;
+  bool merker_2;
+  int  vel;
+
+  //Als nächstes werden alle für die Initialisierung benötigten Pins auf ihre Schaltzustände abgefragt.
+  //Dies entspricht dem Prozessabbild der Eingänge des EVA Prinzipes
+  freigabe =       digitalRead(FREIGABE_PIN);                 //Der Variable "freigabe" wird mit dem Zeichen "=" ein Wert, zugewiesen.
+  automatik =      digitalRead(AUTOMATIK_PIN);                //Der Befehl "digitalRead()" ließt den Zustand des Pins in den Klammern aus und setzt die Variable.
+  endlage =        digitalRead(ENDSCHALTER_PIN);               
+  richtung =       digitalRead(RICHTUNG_PIN);
+  freifahren=      digitalRead(FREIFAHREN_PIN);                  
+  merker_1 = 0;                                               //Diese Merker sind später für ein SR-Flip-Flop essentiell.
+  merker_2 = 0;
+
+
+  //Ab hier beginnt der eigentliche Programmcode mit logischen Verknüpfungen
+  if(freigabe == 1){                                          //Es wird überprüft, ob die Steuerung eingeschalten ist.                                                        
+    digitalWrite(ENABLE_PIN, HIGH);                           //Dementsprechend wird der Schrittmotor ins Haltemoment gesteuert oder Stromlos geschalten.
+    }                                                         //"ENABLE_PIN, HIGH" entspricht keiner Freigabe.
+    else{
+      digitalWrite(ENABLE_PIN, LOW);                          //Mit ENABLE_PIN LOW wird der Schrittmotor aktiviert
+    }
+
+  if(endlage == 1){                                           //Falls Endlage erreicht wird "ENDSCHALTER_MELDE_PIN" bestromt.
+    digitalWrite(ENDSCHALTER_MELDE_PIN, HIGH);
+    }
+    else{
+      digitalWrite(ENDSCHALTER_MELDE_PIN, LOW);
+    }
+  //--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  //Als nächstes werden 4 Verschiedene Fälle abgefragt. Automatik und Hand, Jeweils links- und Rechtslauf.
+  //Handbetrieb: Rechtslauf
+  while(freigabe == 0 && automatik == 1 && richtung == 0      //Abfrage ob Freigabe erhalten, Stellung auf Hand, Richtung im Rechtslauf und Endlage nicht erreicht
+        && endlage == 0 && freifahren == 1){
+
+    freigabe=   digitalRead(FREIGABE_PIN);                    //Damit die Schleife nicht in einer Endlosschleife festhängt, müssen die Werte
+    automatik=  digitalRead(AUTOMATIK_PIN);                   //in der Unterschleife ständig aktualisiert werden.
+    richtung=   digitalRead(RICHTUNG_PIN);
+    freifahren= digitalRead(FREIFAHREN_PIN);
+    endlage=    digitalRead(ENDSCHALTER_PIN);
+    vel =     map(analogRead(HAND_GESCHWINDIGKEIT_PIN), 0, 1023, 8000, 0);//Der Poti wird ausgelesen und auf eine Verzögerung in Mikrosekunden mit dem "map()" Befehl skaliert.
+        
+    if(vel < 7900){                                           //Falls der Poti am unteren Anschlag steht(<2,5%), wird keine Bewegung ausgeführt
+        digitalWrite(DIR_PIN, LOW);                           //Hier wird der Motor angesteuert. Die Variable vel entspricht der resultierenden
+        digitalWrite(STEP_PIN, HIGH);                         //Geschwindigkeit des Schrittmotors
+        delayMicroseconds(vel);
+        digitalWrite(STEP_PIN, LOW);                          //Jeder Umschlag des "STEP_PINS" von "HIGH" auf "LOW" lässt den Schrittmotor
+      }                                                       //um seinen Schrittwinkel drehen.
+    }
+
+  //Handbetrieb: Linkslauf  
+  while(freigabe == 0 && automatik == 1 && richtung == 1      //Ähnlicher Programmcode, nur für Linkslauf
+        && endlage == 0 && freifahren == 1){  
+
+    freigabe=     digitalRead(FREIGABE_PIN);                                      
+    automatik=    digitalRead(AUTOMATIK_PIN);
+    richtung=     digitalRead(RICHTUNG_PIN); 
+    freifahren=   digitalRead(FREIFAHREN_PIN);  
+    endlage=      digitalRead(ENDSCHALTER_PIN);
+    vel=          map(analogRead(HAND_GESCHWINDIGKEIT_PIN), 0, 1023, 8000, 0);        
+        
+    if(vel < 7900){
+      digitalWrite(DIR_PIN, HIGH);                            //Ist der DIR_PIN geändert von LOW auf HIGH, so ändert sich die Drehrichtung.
+      digitalWrite(STEP_PIN, HIGH);
+      delayMicroseconds(vel);
+      digitalWrite(STEP_PIN, LOW);
+      }
+    }
+  //--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  //Automatikbetrieb: Rechtslauf
+  while(freigabe == 0 && automatik == 0 && richtung == 0
+        && endlage == 0 && freifahren == 1){
+    aut_start =   digitalRead(AUTOMATIK_START_FAHRT);         //Ebenfalls werden in dieser Schleife die Schaltzustände der Pins
+    stop_fahrt =  digitalRead(AUTOMATIK_STOP_FAHRT);          //mit jedem durchgang aktualisiert.
+    freigabe=     digitalRead(FREIGABE_PIN);                                    
+    automatik=    digitalRead(AUTOMATIK_PIN);
+    freifahren=   digitalRead(FREIFAHREN_PIN);
+    endlage=      digitalRead(ENDSCHALTER_PIN);               //Durch das Skalieren des Analogwertes ist eine Drehzahlsteuerung während der Fahrt möglich.
+    vel =         map(analogRead(HAND_GESCHWINDIGKEIT_PIN), 0, 1023, 8000, 0);
+
+      if(stop_fahrt == 0){                                    //SR Flip-FLOP, rückgesetzt durch Betätigen des #define "AUTOMATIK_STOP_FAHRT" Pins
+        merker_1 = 0;
+        richtung= digitalRead(RICHTUNG_PIN);
+        }
+        else if(aut_start == 0){                              //und gesetzt durch Betätigen des "AUTOMATIK_STOP_FAHRT" Pins
+        merker_1 = 1;
+        }
+
+      if(merker_1 == 1 && vel < 7900){                        //Wurde der Starttaster für Automatik betätigt, so dreht der Schrittmotor                                                    
+        digitalWrite(DIR_PIN, LOW);                           //solange, bis er eine Endlage erreicht, oder die Fahrt abgebrochen wird.
+        digitalWrite(STEP_PIN, HIGH);
+        delayMicroseconds(vel);
+        digitalWrite(STEP_PIN, LOW);
+        }
+    }
+
+  //Automatikbetrieb: Linkslauf
+  while(freigabe == 0 && automatik == 0 && richtung == 1      //Ähnliches Programm, nur für Linkslauf
+        && endlage == 0 && freifahren == 1){                    
+    aut_start =   digitalRead(AUTOMATIK_START_FAHRT); 
+    stop_fahrt =  digitalRead(AUTOMATIK_STOP_FAHRT);
+    freigabe=     digitalRead(FREIGABE_PIN);                                    
+    automatik=    digitalRead(AUTOMATIK_PIN);
+    freifahren=   digitalRead(FREIFAHREN_PIN);
+    endlage=      digitalRead(ENDSCHALTER_PIN);
+    vel =         map(analogRead(HAND_GESCHWINDIGKEIT_PIN), 0, 1023, 8000, 0);
+
+    if(stop_fahrt == 0){
+      merker_2 = 0;
+      richtung=digitalRead(RICHTUNG_PIN);
+      }
+      else if(aut_start == 0){
+      merker_2 = 1;
+      }
+
+
+    if(merker_2 == 1 && vel < 7900){ 
+        digitalWrite(DIR_PIN, HIGH);
+        digitalWrite(STEP_PIN, HIGH);
+        delayMicroseconds(vel);
+        digitalWrite(STEP_PIN, LOW);
+      }
+    }
+  //--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  //Freifahren nach Rechts
+  while(freigabe == 0 && automatik == 1 && richtung == 0
+        && endlage == 1 && freifahren ==0){
+    freifahren=   digitalRead(FREIFAHREN_PIN);
+    richtung=     digitalRead(RICHTUNG_PIN);   
+    freigabe=     digitalRead(FREIGABE_PIN);  
+    endlage=      digitalRead(ENDSCHALTER_PIN);  
+    vel =         map(analogRead(HAND_GESCHWINDIGKEIT_PIN), 0, 1023, 8000, 0);
+
+    digitalWrite(DIR_PIN, LOW);
+    digitalWrite(STEP_PIN, HIGH);
+    delayMicroseconds(vel);
+    digitalWrite(STEP_PIN, LOW);  
+    digitalWrite(ENDSCHALTER_MELDE_PIN, HIGH);  
+    }
+
+  //Freifahren nach Links
+  while(freigabe == 0 && automatik == 1 && richtung == 1
+        && endlage == 1 && freifahren ==0){
+    freifahren= digitalRead(FREIFAHREN_PIN);
+    richtung=   digitalRead(RICHTUNG_PIN);   
+    freigabe=   digitalRead(FREIGABE_PIN);  
+    endlage=    digitalRead(ENDSCHALTER_PIN);  
+    vel =       map(analogRead(HAND_GESCHWINDIGKEIT_PIN), 0, 1023, 8000, 0);
+        
+        digitalWrite(DIR_PIN, HIGH);
+        digitalWrite(STEP_PIN, HIGH);
+        delayMicroseconds(vel);
+        digitalWrite(STEP_PIN, LOW);   
+        digitalWrite(ENDSCHALTER_MELDE_PIN, HIGH); 
+    }
+  //Hier Endet das Programm und Beginnt von neuem.
+}
+
